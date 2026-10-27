@@ -43,16 +43,19 @@ label{font-size:12px;font-weight:650;color:#334155}.pill{font-size:11px;padding:
  </div>
  <div class="section">
   <div class="stats"><div class="stat"><strong id="visitedCount">0</strong><span>방문 학교</span></div><div class="stat"><strong id="remainingCount">0</strong><span>미방문 학교</span></div><div class="stat"><strong id="visitRate">0%</strong><span>방문율</span></div></div>
+  <label>조회 범위</label><select id="viewScope"><option value="mine">내 방문 학교</option><option value="all">전체 담당자 기록</option></select>
+  <label>담당자 필터 (전체 조회 시)</label><select id="repFilter"><option value="">전체 담당자</option></select>
   <label>자치구</label><select id="district"><option value="">전체 자치구</option></select>
-  <label>담당자 필터</label><select id="repFilter"><option value="">전체 담당자</option></select>
-  <label>방문 상태</label><select id="statusFilter"><option value="all">전체 학교</option><option value="not">미방문</option><option value="visited">방문 완료</option><option value="due">재방문 예정</option></select>
-  <label>학교명 검색</label><input id="search" placeholder="학교명 입력">
-  <div class="row"><button id="importBtn">학교 CSV 가져오기</button><button class="secondary" id="exportBtn">기록 내보내기</button></div>
+  <label>학교 상태</label><select id="statusFilter"><option value="all">전체 학교</option><option value="not">미방문</option><option value="visited">방문 완료</option><option value="due">재방문 예정</option></select>
+  <label>재방문 일정 필터</label><select id="revisitFilter"><option value="all">모든 일정</option><option value="scheduled">재방문 일정 있음</option><option value="overdue">재방문일 지남</option><option value="today">오늘 재방문</option><option value="next7">앞으로 7일</option><option value="next30">앞으로 30일</option></select>
+  <label>학교명 또는 주소 검색</label><input id="search" placeholder="학교명, 주소, 자치구 입력">
+  <div class="row"><button id="importBtn">학교 CSV 가져오기</button><button class="secondary" id="exportBtn">전체 기록 내보내기</button></div>
+  <button id="exportListBtn" class="secondary" style="width:100%;margin-top:2px">현재 목록 CSV 내보내기</button>
   <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
   <div id="status">시작 순서: Supabase 연결 → 로그인 → SQL 설정 → 학교 CSV 가져오기</div>
   <div class="legend"><span><i class="dot" style="background:#94a3b8"></i>미방문</span><span><i class="dot" style="background:#d97706"></i>재방문 예정</span><span>방문 완료는 담당자별 색상</span></div>
-  <h2>학교 목록</h2><div id="schoolList" class="school-list"></div>
-  <div class="section"><h2>담당자별 방문 현황</h2><div id="repStats" class="hint">로그인 후 표시됩니다.</div></div>
+  <h2>방문 학교 목록 <span id="listCount" class="pill">0개</span></h2><p id="scopeHint" class="hint">내 방문 학교만 표시합니다.</p><div id="schoolList" class="school-list"></div>
+  <div class="section"><h2>담당자별 방문 실적</h2><div id="repStats" class="hint">로그인 후 표시됩니다.</div></div>
  </div>
 </aside>
 <section class="panel map-panel"><div id="map"></div></section>
@@ -67,7 +70,7 @@ label{font-size:12px;font-weight:650;color:#334155}.pill{font-size:11px;padding:
   <label>재방문 예정일</label><input id="nextDate" type="date">
   <div class="row"><button class="green" id="saveVisit">방문 기록 추가</button><button class="secondary" id="closeModal">닫기</button></div>
  </div>
- <p class="hint">방문 기록은 작성자별로 별도 저장되며 팀 전체에서 확인할 수 있습니다.</p>
+ <p class="hint">방문 기록은 작성자별로 저장됩니다. 조회 범위에서 본인 기록 또는 전체 담당자 기록을 선택할 수 있습니다.</p>
 </div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -135,10 +138,12 @@ function normalize(rows){
 }
 function repFor(id){return reps.find(r=>r.user_id===id)||{user_id:id,display_name:'담당자',color:'#64748b'}}
 function logsForSchool(id){return logs.filter(v=>v.school_id===id).sort((a,b)=>(b.visit_date||'').localeCompare(a.visit_date||'')||(b.created_at||'').localeCompare(a.created_at||''))}
-function latestLog(s){return logsForSchool(s.id)[0]||null}
+function logsForView(s){let h=logsForSchool(s.id);if($('viewScope')?.value==='mine'&&user)h=h.filter(v=>v.user_id===user.id);else if($('viewScope')?.value==='all'&&$('repFilter')?.value)h=h.filter(v=>v.user_id===$('repFilter').value);return h}
+function latestLog(s){return logsForView(s)[0]||null}
 function state(s){let latest=latestLog(s);if(!latest)return 'not';if(latest.next_visit_date&&latest.next_visit_date>=today())return 'due';return 'visited'}
+function revisitMatch(s){const mode=$('revisitFilter').value;if(mode==='all')return true;const h=logsForView(s).filter(v=>v.next_visit_date).sort((a,b)=>a.next_visit_date.localeCompare(b.next_visit_date));if(mode==='scheduled')return h.length>0;const d=today(),end=new Date(Date.now()+ (mode==='next7'?7:30)*86400000).toISOString().slice(0,10);if(mode==='overdue')return h.some(v=>v.next_visit_date<d);if(mode==='today')return h.some(v=>v.next_visit_date===d);if(mode==='next7')return h.some(v=>v.next_visit_date>=d&&v.next_visit_date<=end);if(mode==='next30')return h.some(v=>v.next_visit_date>=d&&v.next_visit_date<=end);return true}
 function markerInfo(s){
- const h=logsForSchool(s.id);if(!h.length)return {color:'#94a3b8',number:'–',rep:null};
+ const h=logsForView(s);if(!h.length)return {color:'#94a3b8',number:'–',rep:null};
  const latest=h[0],r=repFor(latest.user_id);
  const personal=logs.filter(v=>v.user_id===latest.user_id).sort((a,b)=>(a.visit_date||'').localeCompare(b.visit_date||'')||(a.created_at||'').localeCompare(b.created_at||''));
  const num=personal.findIndex(v=>v.id===latest.id)+1;
@@ -146,50 +151,50 @@ function markerInfo(s){
 }
 function icon(s){const x=markerInfo(s);return L.divIcon({className:'',html:`<div title="${esc(x.rep?.display_name||'미방문')}" style="width:27px;height:27px;display:flex;align-items:center;justify-content:center;border:2px solid white;border-radius:50%;background:${x.color};color:white;font-weight:800;font-size:11px;box-shadow:0 1px 5px #0007">${esc(x.number)}</div>`,iconSize:[27,27],iconAnchor:[13,13]})}
 function filtered(){
- let d=$('district').value,st=$('statusFilter').value,q=$('search').value.trim().toLowerCase(),rep=$('repFilter').value;
- return schools.filter(s=>{const h=logsForSchool(s.id),stateNow=state(s);const hasRep=!rep||h.some(v=>v.user_id===rep);
- return (!d||s.district===d)&&(!q||s.name.toLowerCase().includes(q))&&(st==='all'||stateNow===st)&&hasRep})
+ let d=$('district').value,st=$('statusFilter').value,q=$('search').value.trim().toLowerCase();
+ const mine=$('viewScope').value==='mine';
+ return schools.filter(s=>{
+  const h=logsForView(s),stateNow=state(s);
+  const hasVisit=h.length>0;
+  const haystack=[s.name,s.district,s.address].join(' ').toLowerCase();
+  if(mine&&!hasVisit)return false;
+  return (!d||s.district===d)&&(!q||haystack.includes(q))&&(st==='all'||stateNow===st)&&revisitMatch(s)
+ })
 }
 function render(){
  markers.forEach(m=>map.removeLayer(m));markers.clear();const list=filtered();
  list.forEach(s=>{
-  const mi=markerInfo(s),hist=logsForSchool(s.id),last=hist[0],rep=last?repFor(last.user_id):null;
+  const mi=markerInfo(s),hist=logsForView(s),last=hist[0],rep=last?repFor(last.user_id):null;
   let label=state(s)==='not'?'미방문':state(s)==='due'?'재방문 예정':'방문 완료';
+  const next=last?.next_visit_date?`<br>재방문 예정: ${esc(last.next_visit_date)}`:'';
   let m=L.marker([s.latitude,s.longitude],{icon:icon(s)}).addTo(map);
-  m.bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.district)} · ${esc(s.address)}<br><span style="color:${mi.color}">${label}</span>${rep?`<br>최근 담당자: ${esc(rep.display_name)}`:''}<br>방문 기록 ${hist.length}건<br><button onclick="window.openSchoolById('${encodeURIComponent(s.id)}')">학교 상세 / 방문 기록</button>`);
+  m.bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.district)} · ${esc(s.address)}<br><span style="color:${mi.color}">${label}</span>${rep?`<br>최근 담당자: ${esc(rep.display_name)}`:''}${next}<br>표시 범위 방문 기록 ${hist.length}건<br><button onclick="window.openSchoolById('${encodeURIComponent(s.id)}')">학교 상세 / 방문 기록</button>`);
   markers.set(s.id,m)
  });
  $('schoolList').innerHTML=list.slice(0,800).map(s=>{
-  const hist=logsForSchool(s.id),last=hist[0],mi=markerInfo(s),status=state(s)==='not'?'미방문':state(s)==='due'?'재방문 예정':'방문 완료';
-  return `<div class="school" data-id="${esc(s.id)}"><b><span class="dot" style="background:${mi.color}"></span>${esc(s.name)} <span class="pill">${status}</span></b><small>${esc(s.district)} · ${last?esc(repFor(last.user_id).display_name)+' · '+esc(last.visit_date||'날짜 미입력'):'방문 기록 없음'}</small></div>`
+  const hist=logsForView(s),last=hist[0],mi=markerInfo(s),status=state(s)==='not'?'미방문':state(s)==='due'?'재방문 예정':'방문 완료';
+  return `<div class="school" data-id="${esc(s.id)}"><b><span class="dot" style="background:${mi.color}"></span>${esc(s.name)} <span class="pill">${status}</span></b><small>${esc(s.district)} · ${last?esc(repFor(last.user_id).display_name)+' · 방문 '+esc(last.visit_date||'날짜 미입력'):'방문 기록 없음'}${last?.next_visit_date?' · 재방문 '+esc(last.next_visit_date):''}</small></div>`
  }).join('')||'<p class="hint">조건에 맞는 학교가 없습니다.</p>';
- document.querySelectorAll('.school').forEach(el=>el.onclick=()=>{let s=schools.find(x=>x.id===el.dataset.id);if(s){map.setView([s.latitude,s.longitude],16);markers.get(s.id)?.openPopup()}});
- const visited=new Set(logs.map(v=>v.school_id));$('visitedCount').textContent=schools.filter(s=>visited.has(s.id)).length;
+ $('listCount').textContent=list.length+'개';
+ $('scopeHint').textContent=$('viewScope').value==='mine'?'내가 방문 기록을 남긴 학교만 표시합니다.':'전체 담당자 기록을 기준으로 표시합니다. 담당자를 선택하면 해당 담당자 기록으로 좁혀집니다.';
+ document.querySelectorAll('.school').forEach(el=>el.onclick=()=>{let s=schools.find(x=>x.id===el.dataset.id);if(s){map.setView([s.latitude,s.longitude],16);openSchool(s)}});
+ const scopeLogs=$('viewScope').value==='mine'&&user?logs.filter(v=>v.user_id===user.id):$('viewScope').value==='all'&&$('repFilter').value?logs.filter(v=>v.user_id===$('repFilter').value):logs;
+ const visited=new Set(scopeLogs.map(v=>v.school_id));$('visitedCount').textContent=new Set(scopeLogs.map(v=>v.school_id)).size;
  $('remainingCount').textContent=Math.max(0,schools.length-visited.size);$('visitRate').textContent=(schools.length?Math.round(visited.size/schools.length*100):0)+'%';
- $('repStats').innerHTML=reps.map(r=>{let ids=new Set(logs.filter(v=>v.user_id===r.user_id).map(v=>v.school_id));return `<div style="margin:6px 0"><i class="dot" style="background:${esc(r.color||'#64748b')}"></i><b>${esc(r.display_name||'이름 미설정')}</b> — ${ids.size}개 학교 방문</div>`}).join('')||'담당자 정보가 없습니다.';
+ $('repStats').innerHTML=reps.map(r=>{let repLogs=scopeLogs.filter(v=>v.user_id===r.user_id),ids=new Set(repLogs.map(v=>v.school_id)),due=repLogs.filter(v=>v.next_visit_date&&v.next_visit_date>=today()).length;return `<div style="margin:6px 0"><i class="dot" style="background:${esc(r.color||'#64748b')}"></i><b>${esc(r.display_name||'이름 미설정')}</b> — ${ids.size}개 학교 방문 · 재방문 일정 ${due}건</div>`}).join('')||'담당자 정보가 없습니다.';
 }
 function refreshRepFilter(){const old=$('repFilter').value;$('repFilter').innerHTML='<option value="">전체 담당자</option>'+reps.map(r=>`<option value="${esc(r.user_id)}">${esc(r.display_name||'이름 미설정')}</option>`).join('');$('repFilter').value=old}
 window.openSchoolById=id=>{let s=schools.find(x=>x.id===decodeURIComponent(id));if(s)openSchool(s)};
 function openSchool(s){
  activeSchool=s;$('modalTitle').textContent=s.name;$('schoolAddress').textContent=[s.district,s.address].filter(Boolean).join(' · ');
  $('visitDate').value=today();$('visitNote').value='';$('nextDate').value='';
- const hist=logsForSchool(s.id);
+ const hist=logsForView(s);
  $('visitHistory').innerHTML='<h2>방문 이력 ('+hist.length+'건)</h2>'+(hist.map(v=>{let r=repFor(v.user_id);return `<div class="history"><div class="history-head"><b><i class="dot" style="background:${esc(r.color||'#64748b')}"></i>${esc(r.display_name)}</b><small>${esc(v.visit_date||'날짜 미입력')}</small></div><p>${esc(v.note||'상담 메모 없음')}</p>${v.next_visit_date?`<small>재방문 예정: ${esc(v.next_visit_date)}</small>`:''}</div>`}).join('')||'<p class="hint">아직 방문 기록이 없습니다.</p>');
  $('modal').style.display='flex'
 }
 async function connect(){
  const url=$('sbUrl').value.trim(),key=$('sbKey').value.trim();if(!url||!key){say('Supabase URL과 공개용 키를 입력하세요.');return}
-try {
-  sb = window.supabase.createClient(url, key, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  });
-
-  localStorage.setItem('schoolAppSbUrl', url);
-  localStorage.setItem('schoolAppSbKey', key);
+ try{sb=window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});localStorage.setItem('schoolAppSbUrl',url);localStorage.setItem('schoolAppSbKey',key);
  const {data:{session},error}=await sb.auth.getSession();if(error)throw error;
  user=session?.user||null;updateAuth();if(user)await reloadData();say('Supabase 연결 완료'+(user?' · 로그인됨':' · 이메일과 비밀번호로 로그인하세요.'));render()
  }catch(e){say('연결 오류: '+e.message)}
@@ -254,8 +259,10 @@ $('logoutBtn').onclick=async()=>{if(sb)await sb.auth.signOut();user=null;logs=[]
 $('importBtn').onclick=()=>{if(!sb||!user){say('먼저 Supabase 연결 후 로그인하세요.');return}$('csvFile').click()};
 $('csvFile').onchange=async e=>{if(e.target.files[0])await importCSV(e.target.files[0]);e.target.value=''};
 $('saveVisit').onclick=saveVisit;$('closeModal').onclick=()=>$('modal').style.display='none';
-['district','repFilter','statusFilter'].forEach(id=>$(id).onchange=render);$('search').oninput=render;
-$('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),schools,visits:logs,representatives:reps},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='서울초등학교_담당자별_방문이력.json';a.click();URL.revokeObjectURL(a.href)};
+['district','repFilter','statusFilter','revisitFilter'].forEach(id=>$(id).onchange=render);$('search').oninput=render;
+$('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),schools,visits:logs,representatives:reps},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='서울초등학교_전체_방문이력.json';a.click();URL.revokeObjectURL(a.href)};
+$('exportListBtn').onclick=()=>{const list=filtered(),rows=[['학교명','자치구','주소','조회 범위 담당자','방문일','상담 메모','재방문 예정일','방문 이력 건수']];list.forEach(s=>{const h=logsForView(s),last=h[0],r=last?repFor(last.user_id):null;rows.push([s.name,s.district,s.address||'',r?.display_name||'',last?.visit_date||'',last?.note||'',last?.next_visit_date||'',h.length])});const csv='\uFEFF'+rows.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='서울초등학교_현재_필터_목록.csv';a.click();URL.revokeObjectURL(a.href)};
+$('viewScope').onchange=()=>{if($('viewScope').value==='mine')$('repFilter').value='';render()};
 if($('sbUrl').value&&$('sbKey').value)connect();
 </script>
 </body></html>

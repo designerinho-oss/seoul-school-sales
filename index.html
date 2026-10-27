@@ -179,7 +179,17 @@ function openSchool(s){
 }
 async function connect(){
  const url=$('sbUrl').value.trim(),key=$('sbKey').value.trim();if(!url||!key){say('Supabase URL과 공개용 키를 입력하세요.');return}
- try{sb=window.supabase.createClient(url,key);localStorage.setItem('schoolAppSbUrl',url);localStorage.setItem('schoolAppSbKey',key);
+try {
+  sb = window.supabase.createClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
+
+  localStorage.setItem('schoolAppSbUrl', url);
+  localStorage.setItem('schoolAppSbKey', key);
  const {data:{session},error}=await sb.auth.getSession();if(error)throw error;
  user=session?.user||null;updateAuth();if(user)await reloadData();say('Supabase 연결 완료'+(user?' · 로그인됨':' · 이메일과 비밀번호로 로그인하세요.'));render()
  }catch(e){say('연결 오류: '+e.message)}

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>서울 초등학교 영업 방문 지도</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f3f6fb}
+*{box-sizing:border-box}body{margin:0}header{background:#172554;color:#fff;padding:15px 18px}header h1{font-size:20px;margin:0 0 5px}header p{font-size:12px;margin:0;color:#dbeafe}
+main{max-width:1450px;margin:auto;padding:12px;display:grid;grid-template-columns:370px 1fr;gap:12px}.panel{background:white;border:1px solid #e1e7f0;border-radius:14px;padding:13px;box-shadow:0 2px 8px #1020400a}
+h2{font-size:16px;margin:4px 0 10px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}.stat{background:#f8fafc;border-radius:10px;padding:9px 4px;text-align:center}.stat strong{display:block;font-size:21px}.stat span{font-size:11px;color:#64748b}
+input,select,textarea,button{font:inherit}input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:9px;padding:9px;background:#fff;margin:4px 0 9px}button{border:0;border-radius:9px;padding:10px 11px;cursor:pointer;font-weight:650;background:#1d4ed8;color:#fff}button.secondary{background:#e2e8f0;color:#172033}button.green{background:#15803d}button.orange{background:#b45309}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:7px}.row>*{flex:1;min-width:0}.hint{font-size:11px;line-height:1.5;color:#64748b}.section{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:10px}#map{height:76vh;min-height:480px;border-radius:12px;overflow:hidden}
+#status{font-size:12px;color:#475569;white-space:pre-wrap;margin:8px 0}.school-list{max-height:260px;overflow:auto;border-top:1px solid #e2e8f0;margin-top:8px}.school{padding:9px 3px;border-bottom:1px solid #eef2f7;cursor:pointer}.school b{display:block;font-size:13px}.school small{color:#64748b}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+label{font-size:12px;font-weight:650;color:#334155}.pill{font-size:11px;padding:3px 7px;border-radius:99px;background:#dbeafe;color:#1d4ed8;display:inline-block}
+.legend{display:flex;gap:9px;flex-wrap:wrap;font-size:11px;color:#475569;margin:7px 0}.legend .dot{width:10px;height:10px}
+.modal{display:none;position:fixed;inset:0;background:#0f172a99;z-index:9999;align-items:center;justify-content:center;padding:14px}.modal-box{background:#fff;border-radius:16px;padding:18px;width:min(620px,100%);max-height:92vh;overflow:auto}.modal-box h2{font-size:19px;margin-top:0}
+.history{border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin:8px 0}.history-head{display:flex;gap:8px;align-items:center;justify-content:space-between}.history p{margin:6px 0;white-space:pre-wrap;font-size:13px}.history small{color:#64748b}
+@media(max-width:850px){main{display:flex;flex-direction:column;padding:8px}.map-panel{order:1}aside{order:2}#map{height:53vh;min-height:350px}.school-list{max-height:200px}}
+</style>
+</head>
+<body>
+<header><h1>서울 초등학교 영업 방문 지도</h1><p>공동 사용 · 담당자별 색상 · 방문 이력 · 상담 메모 · 재방문 일정</p></header>
+<main>
+<aside class="panel">
+ <div id="authStatus" class="pill">로그인 전</div>
+ <h2>계정 / 연결 설정</h2>
+ <label>Supabase Project URL</label><input id="sbUrl" placeholder="https://프로젝트ID.supabase.co">
+ <label>Supabase Publishable 또는 anon key</label><input id="sbKey" placeholder="공개용 키만 입력하세요">
+ <div class="row"><button id="connectBtn">연결</button><button class="secondary" id="logoutBtn">로그아웃</button></div>
+ <label>이메일</label><input id="email" type="email" placeholder="name@company.com">
+ <label>비밀번호</label><input id="password" type="password" placeholder="비밀번호">
+ <div class="row"><button id="signInBtn">로그인</button><button class="secondary" id="signUpBtn">계정 만들기</button></div>
+ <p class="hint">팀원마다 개인 계정을 사용하세요. 관리자 키(service_role)는 웹앱에 입력하지 마세요.</p>
+ <div class="section">
+  <h2>내 담당자 정보</h2>
+  <label>지도에 표시할 이름</label><input id="repName" placeholder="예: 김 담당자">
+  <label>내 지도 색상</label><select id="repColor">
+   <option value="#2563eb">파랑</option><option value="#16a34a">초록</option><option value="#ea580c">주황</option><option value="#9333ea">보라</option><option value="#db2777">분홍</option><option value="#0891b2">청록</option><option value="#4f46e5">남색</option><option value="#854d0e">갈색</option>
+  </select>
+  <button id="saveRep" class="secondary">담당자 정보 저장</button>
+  <p class="hint">각 담당자가 처음 로그인한 뒤 이름과 색상을 저장합니다. 팀원 간 색상은 서로 다르게 지정하세요.</p>
+ </div>
+ <div class="section">
+  <div class="stats"><div class="stat"><strong id="visitedCount">0</strong><span>방문 학교</span></div><div class="stat"><strong id="remainingCount">0</strong><span>미방문 학교</span></div><div class="stat"><strong id="visitRate">0%</strong><span>방문율</span></div></div>
+  <label>자치구</label><select id="district"><option value="">전체 자치구</option></select>
+  <label>담당자 필터</label><select id="repFilter"><option value="">전체 담당자</option></select>
+  <label>방문 상태</label><select id="statusFilter"><option value="all">전체 학교</option><option value="not">미방문</option><option value="visited">방문 완료</option><option value="due">재방문 예정</option></select>
+  <label>학교명 검색</label><input id="search" placeholder="학교명 입력">
+  <div class="row"><button id="importBtn">학교 CSV 가져오기</button><button class="secondary" id="exportBtn">기록 내보내기</button></div>
+  <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+  <div id="status">시작 순서: Supabase 연결 → 로그인 → SQL 설정 → 학교 CSV 가져오기</div>
+  <div class="legend"><span><i class="dot" style="background:#94a3b8"></i>미방문</span><span><i class="dot" style="background:#d97706"></i>재방문 예정</span><span>방문 완료는 담당자별 색상</span></div>
+  <h2>학교 목록</h2><div id="schoolList" class="school-list"></div>
+  <div class="section"><h2>담당자별 방문 현황</h2><div id="repStats" class="hint">로그인 후 표시됩니다.</div></div>
+ </div>
+</aside>
+<section class="panel map-panel"><div id="map"></div></section>
+</main>
+<div class="modal" id="modal"><div class="modal-box">
+ <h2 id="modalTitle">학교 상세</h2><div id="schoolAddress" class="hint"></div>
+ <div id="visitHistory"></div>
+ <div class="section">
+  <h2>방문 기록 추가</h2>
+  <label>방문일</label><input id="visitDate" type="date">
+  <label>상담 내용 / 후속 조치</label><textarea id="visitNote" rows="4" placeholder="상담 상대, 제안 내용, 결과, 다음 연락 사항"></textarea>
+  <label>재방문 예정일</label><input id="nextDate" type="date">
+  <div class="row"><button class="green" id="saveVisit">방문 기록 추가</button><button class="secondary" id="closeModal">닫기</button></div>
+ </div>
+ <p class="hint">방문 기록은 작성자별로 별도 저장되며 팀 전체에서 확인할 수 있습니다.</p>
+</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const map=L.map('map').setView([37.5665,126.978],11);
+// API 키가 필요한 타일 제공처는 제외하고, 공개 지도 타일 제공처를 사용합니다.
+// 실제 서비스 배포 시 각 제공처의 이용 약관/요청 제한을 준수하세요.
+const tileProviders = [
+  {
+    name: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options: {subdomains:'abc', maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}
+  },
+  {
+    name: 'OpenTopoMap',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    options: {subdomains:'abc', maxZoom:17, attribution:'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap'}
+  }
+];
+let tileProviderIndex = 0;
+let currentTileLayer = null;
+function setTileProvider(index) {
+  if (index >= tileProviders.length) {
+    say('지도 타일을 불러오지 못했습니다. 네트워크 또는 지도 제공처 접속이 차단되었을 수 있습니다. 다른 인터넷 연결에서 다시 시도해 주세요.');
+    return;
+  }
+  tileProviderIndex = index;
+  const provider = tileProviders[index];
+  if (currentTileLayer) map.removeLayer(currentTileLayer);
+  currentTileLayer = L.tileLayer(provider.url, provider.options).addTo(map);
+  let switched = false;
+  currentTileLayer.on('tileerror', () => {
+    if (switched) return;
+    switched = true;
+    if (tileProviderIndex < tileProviders.length - 1) {
+      say('지도 배경 오류가 감지되어 다른 지도 제공처로 전환 중입니다 (' + provider.name + ').');
+      setTimeout(() => setTileProvider(tileProviderIndex + 1), 400);
+    } else {
+      say('공개 지도 타일 제공처 접속이 실패했습니다. 회사/기관 네트워크 정책 또는 외부 지도 서비스 차단을 확인해 주세요.');
+    }
+  });
+}
+setTileProvider(0);
+let sb=null,user=null,schools=[],logs=[],reps=[],markers=new Map(),activeSchool=null,myRep=null;
+const $=id=>document.getElementById(id);
+$('sbUrl').value=localStorage.getItem('schoolAppSbUrl')||'';
+$('sbKey').value=localStorage.getItem('schoolAppSbKey')||'';
+const today=()=>new Date().toISOString().slice(0,10);
+function say(s){$('status').textContent=s}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function parseCSV(text){
+ const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(x=>x.trim());
+ function split(line){let a=[],v='',q=false;for(let i=0;i<line.length;i++){let c=line[i];if(c==='"'&&q&&line[i+1]==='"'){v+='"';i++}else if(c==='"')q=!q;else if(c===','&&!q){a.push(v);v=''}else v+=c}a.push(v);return a}
+ if(lines.length<2)return [];const heads=split(lines[0]).map(x=>x.trim().replace(/^"|"$/g,''));
+ return lines.slice(1).map(line=>{let a=split(line),o={};heads.forEach((h,i)=>o[h]=(a[i]||'').trim().replace(/^"|"$/g,''));return o})
+}
+function pick(r,keys){for(const k of keys)if(r[k]&&String(r[k]).trim())return String(r[k]).trim();return ''}
+function normalize(rows){
+ return rows.map((r,i)=>{
+  let name=pick(r,['학교명','학교명칭','학교','school_name']),district=pick(r,['자치구','구','행정구','district']);
+  let level=pick(r,['학교급','학교종류','학교구분','school_level']),lat=Number(pick(r,['위도','lat','latitude'])),lng=Number(pick(r,['경도','lon','lng','longitude']));
+  let address=pick(r,['주소','도로명주소','소재지','address']),year=pick(r,['연도','기준연도','year']);
+  return {id:[name,district,address].join('|')||String(i),name,district,level,latitude:lat,longitude:lng,address,source_year:year};
+ }).filter(s=>s.name&&s.district&&Number.isFinite(s.latitude)&&Number.isFinite(s.longitude)&&(!s.level||s.level.includes('초등')))
+}
+function repFor(id){return reps.find(r=>r.user_id===id)||{user_id:id,display_name:'담당자',color:'#64748b'}}
+function logsForSchool(id){return logs.filter(v=>v.school_id===id).sort((a,b)=>(b.visit_date||'').localeCompare(a.visit_date||'')||(b.created_at||'').localeCompare(a.created_at||''))}
+function latestLog(s){return logsForSchool(s.id)[0]||null}
+function state(s){let latest=latestLog(s);if(!latest)return 'not';if(latest.next_visit_date&&latest.next_visit_date>=today())return 'due';return 'visited'}
+function markerInfo(s){
+ const h=logsForSchool(s.id);if(!h.length)return {color:'#94a3b8',number:'–',rep:null};
+ const latest=h[0],r=repFor(latest.user_id);
+ const personal=logs.filter(v=>v.user_id===latest.user_id).sort((a,b)=>(a.visit_date||'').localeCompare(b.visit_date||'')||(a.created_at||'').localeCompare(b.created_at||''));
+ const num=personal.findIndex(v=>v.id===latest.id)+1;
+ return {color:(state(s)==='due'?'#d97706':r.color||'#2563eb'),number:String(num||1),rep:r};
+}
+function icon(s){const x=markerInfo(s);return L.divIcon({className:'',html:`<div title="${esc(x.rep?.display_name||'미방문')}" style="width:27px;height:27px;display:flex;align-items:center;justify-content:center;border:2px solid white;border-radius:50%;background:${x.color};color:white;font-weight:800;font-size:11px;box-shadow:0 1px 5px #0007">${esc(x.number)}</div>`,iconSize:[27,27],iconAnchor:[13,13]})}
+function filtered(){
+ let d=$('district').value,st=$('statusFilter').value,q=$('search').value.trim().toLowerCase(),rep=$('repFilter').value;
+ return schools.filter(s=>{const h=logsForSchool(s.id),stateNow=state(s);const hasRep=!rep||h.some(v=>v.user_id===rep);
+ return (!d||s.district===d)&&(!q||s.name.toLowerCase().includes(q))&&(st==='all'||stateNow===st)&&hasRep})
+}
+function render(){
+ markers.forEach(m=>map.removeLayer(m));markers.clear();const list=filtered();
+ list.forEach(s=>{
+  const mi=markerInfo(s),hist=logsForSchool(s.id),last=hist[0],rep=last?repFor(last.user_id):null;
+  let label=state(s)==='not'?'미방문':state(s)==='due'?'재방문 예정':'방문 완료';
+  let m=L.marker([s.latitude,s.longitude],{icon:icon(s)}).addTo(map);
+  m.bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.district)} · ${esc(s.address)}<br><span style="color:${mi.color}">${label}</span>${rep?`<br>최근 담당자: ${esc(rep.display_name)}`:''}<br>방문 기록 ${hist.length}건<br><button onclick="window.openSchoolById('${encodeURIComponent(s.id)}')">학교 상세 / 방문 기록</button>`);
+  markers.set(s.id,m)
+ });
+ $('schoolList').innerHTML=list.slice(0,800).map(s=>{
+  const hist=logsForSchool(s.id),last=hist[0],mi=markerInfo(s),status=state(s)==='not'?'미방문':state(s)==='due'?'재방문 예정':'방문 완료';
+  return `<div class="school" data-id="${esc(s.id)}"><b><span class="dot" style="background:${mi.color}"></span>${esc(s.name)} <span class="pill">${status}</span></b><small>${esc(s.district)} · ${last?esc(repFor(last.user_id).display_name)+' · '+esc(last.visit_date||'날짜 미입력'):'방문 기록 없음'}</small></div>`
+ }).join('')||'<p class="hint">조건에 맞는 학교가 없습니다.</p>';
+ document.querySelectorAll('.school').forEach(el=>el.onclick=()=>{let s=schools.find(x=>x.id===el.dataset.id);if(s){map.setView([s.latitude,s.longitude],16);markers.get(s.id)?.openPopup()}});
+ const visited=new Set(logs.map(v=>v.school_id));$('visitedCount').textContent=schools.filter(s=>visited.has(s.id)).length;
+ $('remainingCount').textContent=Math.max(0,schools.length-visited.size);$('visitRate').textContent=(schools.length?Math.round(visited.size/schools.length*100):0)+'%';
+ $('repStats').innerHTML=reps.map(r=>{let ids=new Set(logs.filter(v=>v.user_id===r.user_id).map(v=>v.school_id));return `<div style="margin:6px 0"><i class="dot" style="background:${esc(r.color||'#64748b')}"></i><b>${esc(r.display_name||'이름 미설정')}</b> — ${ids.size}개 학교 방문</div>`}).join('')||'담당자 정보가 없습니다.';
+}
+function refreshRepFilter(){const old=$('repFilter').value;$('repFilter').innerHTML='<option value="">전체 담당자</option>'+reps.map(r=>`<option value="${esc(r.user_id)}">${esc(r.display_name||'이름 미설정')}</option>`).join('');$('repFilter').value=old}
+window.openSchoolById=id=>{let s=schools.find(x=>x.id===decodeURIComponent(id));if(s)openSchool(s)};
+function openSchool(s){
+ activeSchool=s;$('modalTitle').textContent=s.name;$('schoolAddress').textContent=[s.district,s.address].filter(Boolean).join(' · ');
+ $('visitDate').value=today();$('visitNote').value='';$('nextDate').value='';
+ const hist=logsForSchool(s.id);
+ $('visitHistory').innerHTML='<h2>방문 이력 ('+hist.length+'건)</h2>'+(hist.map(v=>{let r=repFor(v.user_id);return `<div class="history"><div class="history-head"><b><i class="dot" style="background:${esc(r.color||'#64748b')}"></i>${esc(r.display_name)}</b><small>${esc(v.visit_date||'날짜 미입력')}</small></div><p>${esc(v.note||'상담 메모 없음')}</p>${v.next_visit_date?`<small>재방문 예정: ${esc(v.next_visit_date)}</small>`:''}</div>`}).join('')||'<p class="hint">아직 방문 기록이 없습니다.</p>');
+ $('modal').style.display='flex'
+}
+async function connect(){
+ const url=$('sbUrl').value.trim(),key=$('sbKey').value.trim();if(!url||!key){say('Supabase URL과 공개용 키를 입력하세요.');return}
+ try{sb=window.supabase.createClient(url,key);localStorage.setItem('schoolAppSbUrl',url);localStorage.setItem('schoolAppSbKey',key);
+ const {data:{session},error}=await sb.auth.getSession();if(error)throw error;
+ user=session?.user||null;updateAuth();if(user)await reloadData();say('Supabase 연결 완료'+(user?' · 로그인됨':' · 이메일과 비밀번호로 로그인하세요.'));render()
+ }catch(e){say('연결 오류: '+e.message)}
+}
+function updateAuth(){$('authStatus').textContent=user?'로그인: '+(user.email||user.id):'로그인 전'}
+async function signIn(signUp=false){
+ if(!sb){await connect();if(!sb)return}
+ const email=$('email').value.trim(),password=$('password').value;if(!email||!password){say('이메일과 비밀번호를 입력하세요.');return}
+ let res=signUp?await sb.auth.signUp({email,password}):await sb.auth.signInWithPassword({email,password});
+ if(res.error){say('인증 오류: '+res.error.message);return}
+ user=res.data.user;updateAuth();
+ if(signUp&&!res.data.session){say('계정 생성 요청 완료. 이메일 확인을 마친 뒤 로그인하세요.');return}
+ await reloadData();say('로그인 완료.');render()
+}
+async function reloadData(){await loadSchools();await loadReps();await loadLogs();loadMyRepFields();render()}
+async function loadSchools(){
+ if(!sb)return;const {data,error}=await sb.from('schools').select('*').order('district').order('name').limit(10000);
+ if(error){say('학교 목록 불러오기 실패: '+error.message+' · SQL 설정을 확인하세요.');return}
+ schools=(data||[]).map(s=>({id:s.id,name:s.name,district:s.district,address:s.address||'',latitude:Number(s.latitude),longitude:Number(s.longitude),level:s.school_type||''}));
+ const ds=[...new Set(schools.map(s=>s.district))].sort((a,b)=>a.localeCompare(b,'ko'));
+ $('district').innerHTML='<option value="">전체 자치구</option>'+ds.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+ if(schools.length)map.fitBounds(L.latLngBounds(schools.map(s=>[s.latitude,s.longitude])).pad(.05));render()
+}
+async function loadReps(){
+ const {data,error}=await sb.from('sales_reps').select('user_id,display_name,color');
+ if(error){say('담당자 목록 오류: '+error.message+' · 안내 파일의 SQL을 먼저 실행하세요.');return}
+ reps=data||[];myRep=reps.find(r=>r.user_id===user?.id)||null;refreshRepFilter()
+}
+async function loadLogs(){
+ const {data,error}=await sb.from('school_visit_logs').select('id,school_id,user_id,visit_date,note,next_visit_date,created_at').order('visit_date');
+ if(error){say('방문 이력 오류: '+error.message+' · 안내 파일의 SQL을 먼저 실행하세요.');return}
+ logs=data||[]
+}
+function loadMyRepFields(){$('repName').value=myRep?.display_name||'';$('repColor').value=myRep?.color||'#2563eb'}
+async function saveRep(){
+ if(!sb||!user){say('로그인 후 담당자 정보를 저장하세요.');return}
+ const display_name=$('repName').value.trim();if(!display_name){say('지도에 표시할 이름을 입력하세요.');return}
+ const payload={user_id:user.id,display_name,color:$('repColor').value,updated_at:new Date().toISOString()};
+ const {error}=await sb.from('sales_reps').upsert(payload,{onConflict:'user_id'});
+ if(error){say('담당자 정보 저장 실패: '+error.message);return}
+ await loadReps();loadMyRepFields();render();say('담당자 이름과 색상을 저장했습니다.')
+}
+async function importCSV(file){
+ if(!sb||!user){say('학교 데이터를 올리려면 Supabase 연결 후 로그인하세요.');return}
+ try{
+  const rows=parseCSV(await file.text()),norm=normalize(rows);
+  if(!norm.length){say('좌표가 포함된 초등학교 행을 찾지 못했습니다. CSV 열 이름을 확인하세요.');return}
+  let payload=norm.map(s=>({id:s.id,name:s.name,district:s.district,address:s.address,latitude:s.latitude,longitude:s.longitude,school_type:s.level,source_year:s.source_year}));
+  let done=0;for(let i=0;i<payload.length;i+=300){const {error}=await sb.from('schools').upsert(payload.slice(i,i+300),{onConflict:'id'});if(error)throw error;done+=Math.min(300,payload.length-i);say(`학교 데이터 업로드 중: ${done}/${payload.length}`)}
+  await loadSchools();say(`완료: 학교 ${norm.length}개를 공용 학교 목록에 업로드했습니다.`)
+ }catch(e){say('CSV 업로드 오류: '+e.message)}
+}
+async function saveVisit(){
+ if(!sb||!user){say('방문 기록 저장 전에 로그인하세요.');return}if(!activeSchool)return;
+ const payload={user_id:user.id,school_id:activeSchool.id,visit_date:$('visitDate').value||today(),note:$('visitNote').value.trim(),next_visit_date:$('nextDate').value||null};
+ const {error}=await sb.from('school_visit_logs').insert(payload);
+ if(error){say('방문 기록 저장 실패: '+error.message);return}
+ await loadLogs();openSchool(activeSchool);render();say('방문 기록을 추가했습니다.')
+}
+$('connectBtn').onclick=connect;$('signInBtn').onclick=()=>signIn(false);$('signUpBtn').onclick=()=>signIn(true);$('saveRep').onclick=saveRep;
+$('logoutBtn').onclick=async()=>{if(sb)await sb.auth.signOut();user=null;logs=[];reps=[];myRep=null;updateAuth();render();say('로그아웃했습니다.')};
+$('importBtn').onclick=()=>{if(!sb||!user){say('먼저 Supabase 연결 후 로그인하세요.');return}$('csvFile').click()};
+$('csvFile').onchange=async e=>{if(e.target.files[0])await importCSV(e.target.files[0]);e.target.value=''};
+$('saveVisit').onclick=saveVisit;$('closeModal').onclick=()=>$('modal').style.display='none';
+['district','repFilter','statusFilter'].forEach(id=>$(id).onchange=render);$('search').oninput=render;
+$('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),schools,visits:logs,representatives:reps},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='서울초등학교_담당자별_방문이력.json';a.click();URL.revokeObjectURL(a.href)};
+if($('sbUrl').value&&$('sbKey').value)connect();
+</script>
+</body></html>
